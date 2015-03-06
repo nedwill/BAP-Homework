@@ -1,0 +1,19 @@
+digraph G {
+  "sub_82c0";
+  "sub_82e0";
+  "sub_834c";
+  "sub_83a8";
+  "sub_8444";
+  "sub_8450";
+  "sub_845c";
+  "sub_84d0";
+  
+  
+  "sub_82c0" -> "sub_834c";
+  "sub_845c" -> "sub_8444";
+  "sub_845c" -> "sub_8450";
+  "sub_845c" -> "sub_82e0";
+  "sub_845c" -> "sub_82e0";
+  "sub_84d0" -> "sub_82c0";
+  
+  }

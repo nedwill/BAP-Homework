@@ -1,0 +1,18 @@
+opam pin add bap git://github.com/BinaryAnalysisPlatform/bap
+upgrade on mac
+
+tuareg
+merlin
+ocp-indent
+auto-complete
+make sure you get these from opam
+
+callgraph.ml
+bapbuild callgraph.plugin
+bap-objdump /bin/ls -lcallgraph (-lsomething ...chain these)
+
+bap_program_visitor.mli
+program: result of disassembly
+symbols: ...
+
+bapbuild -pkg ocamlgraph callgraph.plugin
