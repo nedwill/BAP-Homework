@@ -19,3 +19,49 @@ bapbuild -pkg ocamlgraph callgraph.plugin
 
 assignment
 
+relevant messages from slack
+
+ivg [2:30 PM] 
+they have different interface, different invariants and underlying assumptions, and different implementation. Although both are about assosiativity between mem and data
+
+maurer [3:02 PM] 
+ivg: does insns_of_mem imply cfg recovery, followed by searching a table for known reachable instructions, or does it imply linear sweep?
+
+ivg [3:02 PM] 
+no linear sweep, only recursive descent.
+
+maurer [3:03 PM] 
+OK. The documentation doesn't really mention that these are subject to cfg recovery >_>
+
+maurer [3:03 PM]
+it just says that it returns instructions in those regions
+
+maurer [3:03 PM]
+(recursive descent is what I want, but I couldn't tell I was going to get it from the docs
+
+ivg [3:03 PM] 
+ok, got it, ty
+
+maurer [3:04 PM] 
+err, insns_at_mem was what I was talking about
+
+maurer [3:04 PM]
+but yeah, thanks
+
+ivg [3:05 PM] 
+the only way to obtain something from the `linear_sweep` is to call the `linear_sweep`, and actually it doesn't return a value of type `disasm`. Original idea, was that `disasm` is the disassembly of the program to best of our knowledge and skill so far, currently it is recursive descent.
+
+dluchaup [3:06 PM] 
+(adding here a question I had for David): the assignment says: "Given a program and an integer k, return a table m where m maps from a function to a k-sensitive call string." So does this map a function f to a single k-call string, or to all possible k-call strings of f? ($3.2 pg.5)
+
+dluchaup [3:06 PM]
+if we go back to Listing 1, there are the 3 call strings of length 2 for f: (c1,c4),(c2,c4),(c3,c4).
+
+dluchaup [3:02 PM]
+What should map[f] be?
+
+dluchaup [3:07 PM]
+Answer: map[f] could be  [  [c1;c4]; [c2;c4]; [c3;c4]] (i.e. a set or a list of contexts).
+
+dbrumley [3:08 PM] 
+Note that I'm leaving the set returned to be up to the API designer here; please make a good choice.  (it need not be a list.)
