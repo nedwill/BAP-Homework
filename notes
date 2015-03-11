@@ -16,3 +16,6 @@ program: result of disassembly
 symbols: ...
 
 bapbuild -pkg ocamlgraph callgraph.plugin
+
+assignment
+
