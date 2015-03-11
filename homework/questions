@@ -1,0 +1,21 @@
+k-length call graph
+
+void f()
+{
+  return g();
+}
+
+void g()
+{
+  return f();
+}
+
+We will never see (f,f,f,f) or (g,g,g,g)
+
+But we have two unique call chains of length 4:
+(f,g,f,g), (g,f,g,f)
+So a better stopping condition might saturating all possible call strings of length <= k
+
+We still have termination because there are a finite number of length k call chains taken from the set of functions, of which some subset is reachable.
+
+
