@@ -27,3 +27,19 @@ let all_calls p =
   Seq.mapi flattened ~f:(fun i (addr, src, dst) -> (i, addr, src, dst))
 
 let callstrings p root = Seq.empty
+
+(* Given a program and an integer k, return a table m where m maps from
+ * a function to a k-sensitive call string.
+ *)
+let kstrings = ()
+
+(* Given a program, return a table m where m maps from a function to
+ * the acyclic call string.
+ *)
+let astrings = ()
+
+(* Given a call string table and a root r, generate a call string tree. *)
+let cstree_of_table = ()
+
+(* Given a program and a root r, generate a call string tree. *)
+let cstree_of_program = ()
