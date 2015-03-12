@@ -149,9 +149,9 @@ let cycle_list callstring_list v_dupe : call_string list =
   in
   collect_cycle dupe_start |> List.rev
 
-let rec prefix_matches l (cycle_l : call_string list) =
+let rec prefix_matches l (cycle_l : call_site list) =
   match (l, cycle_l) with
-  | ((Singleton x)::l, (Singleton x')::l') ->
+  | ((Singleton x)::l, x'::l') ->
     if x = x' then prefix_matches l l' else false
   | ((Cycle _::_), _::_) -> false
   | ((Singleton _)::_, _::_) -> false
@@ -161,9 +161,9 @@ let rec prefix_matches l (cycle_l : call_string list) =
 
 exception NotMatching
 
-let rec drop_cycle_prefix l (cycle_l : call_string list) : call_string list =
+let rec drop_cycle_prefix l (cycle_l : call_site list) : call_string list =
   match (l, cycle_l) with
-  | ((Singleton x')::l', (Singleton x'')::l'') ->
+  | ((Singleton x')::l', x''::l'') ->
     if x' <> x'' then
       raise NotMatching
     else
@@ -172,7 +172,7 @@ let rec drop_cycle_prefix l (cycle_l : call_string list) : call_string list =
   | _ -> raise NotMatching
 
 (* replace runs of singletons in l with Cycle (cycle_l) *)
-let replace_cycles (l : call_string list) (cycle_l : call_string list) : call_string list =
+let replace_cycles (l : call_string list) (cycle_l : call_site list) : call_string list =
   let rec replace_cycles' (l : call_string list) : call_string list =
     match l with
     | [] -> []
