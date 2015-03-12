@@ -87,32 +87,6 @@ type call_string =
   | Singleton of call_site
   | Cycle of call_site list
 
-(*
-get all paths of up to length k starting from vertex v:
-let N = nbh(v)
-map x::(recursive dfs) over N
-
-this will give us all paths up to length 2*|v|
-
-now need
-callstring_of_list:
-map everything to singletons to start
-
-loop:
-maintain set of seen vertices, fold over the list
-no duplicate: done
-first duplicate:
-  find list of elements in cycle
-  go through list, replacing every cycle with the cycle node
-  go through list, keeping only first cycle node
-  recurse
-
-in this case our table will be a seq.
-dedupe list
-then take all sublists for smaller sized graphs
-the dedupe that and return as a seq
-*)
-
 exception EmptyCycle
 
 (* out-neighbors of v in g *)
@@ -135,8 +109,8 @@ let rec dedupe_list = function
 
 let get_first_element = function
   | Singleton site -> site
-  | Cycle x::_ -> x
-  | Cycle [] -> raise EmptyCycle
+  | Cycle (x::_) -> x
+  | Cycle ([]) -> raise EmptyCycle
 
 let first_dupe_callstring l =
   let combine (first_dupe, current_set) element =
@@ -150,7 +124,7 @@ let first_dupe_callstring l =
     | Some x -> (Some x, current_set)
     end
   in
-  fst (List.fold_left combine Set.empty l)
+  List.fold l ~init:(None, Set.empty ~comparator:Int.comparator) ~f:combine |> fst
 
 exception NoDupeFound
 
@@ -161,51 +135,54 @@ exception NoDupeFound
    e.g. cycle_list ([a;b;c;a;b;c], a) -> [a;b;c]
    Note: We should have a unit test for this.
  *)
-let cycle_list callstring_list v_dupe =
+let cycle_list callstring_list v_dupe : call_string list =
   let rec clear_start = function
     | x::l when get_first_element x = v_dupe -> l
     | _::l -> clear_start l
     | [] -> raise NoDupeFound
   in
   let dupe_start = clear_start callstring_list in
-  let rec collect_cycle collected = function
-    | x::l when get_first_element x = v_dupe -> collected
+  let rec collect_cycle = function
+    | x::l when get_first_element x = v_dupe -> []
     | x::l -> x::(collect_cycle l)
     | [] -> raise NoDupeFound (* didn't find the other element *)
   in
-  List.rev (collect_cycle [] dupe_start)
+  collect_cycle dupe_start |> List.rev
 
-let rec prefix_matches l cycle_l =
+let rec prefix_matches l (cycle_l : call_string list) =
   match (l, cycle_l) with
   | ((Singleton x)::l, (Singleton x')::l') ->
     if x = x' then prefix_matches l l' else false
+  | ((Cycle _::_), _::_) -> false
+  | ((Singleton _)::_, _::_) -> false
   | ([], _::_) -> false
   | (_::_, []) -> false
   | ([], []) -> true
 
 exception NotMatching
 
-let rec drop_cycle l cycle_l =
+let rec drop_cycle_prefix l (cycle_l : call_string list) : call_string list =
   match (l, cycle_l) with
-  | (x'::l', x''::l'') ->
+  | ((Singleton x')::l', (Singleton x'')::l'') ->
     if x' <> x'' then
       raise NotMatching
     else
-      drop_cycle l' l''
+      drop_cycle_prefix l' l''
   | (_, []) -> l
   | _ -> raise NotMatching
 
 (* replace runs of singletons in l with Cycle (cycle_l) *)
-let rec replace_cycles l cycle_l =
-  let rec replace_cycles' l =
+let replace_cycles (l : call_string list) (cycle_l : call_string list) : call_string list =
+  let rec replace_cycles' (l : call_string list) : call_string list =
     match l with
     | [] -> []
     | x::l' ->
       if prefix_matches (x::l') cycle_l then
-        let dropped = (drop_cycle_prefix l' cycle_l) |> replace_cycles' in
+        let dropped : call_string list = drop_cycle_prefix l' cycle_l
+        |> replace_cycles' in (* careful, not tail recursive *)
         (Cycle cycle_l)::dropped
       else
-        x::(replace_cycles' l)
+        x::(replace_cycles' l')
   in
   replace_cycles' l
 
