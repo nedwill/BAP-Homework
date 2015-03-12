@@ -12,7 +12,7 @@ let calls syms insns =
             | None -> calls
             | Some (mem, dst) ->
               if Addr.(Memory.min_addr mem = addr) then
-                Seq.cons (addr, dst) calls
+                Seq.cons dst calls
               else calls
           else calls
       end) in visitor#run (Insn.bil insn) Seq.empty)
@@ -21,14 +21,13 @@ let all_calls p =
   let string_tab = Table.mapi p.symbols ~f:(
     fun mem src ->
       Seq.map (calls p.symbols (Disasm.insns_at_mem p.program mem)) ~f:(
-        fun (addr, dst) -> (addr, src, dst))) in
+        fun dst -> (src, dst))) in
   let flattened = Seq.concat_map ~f:snd (Table.to_sequence string_tab) in
-  (* we might want to fold into a table here from i to the tuple *)
-  (* ok yeah this really needs to be a map. i'll change it soon *)
-  Seq.mapi flattened ~f:(fun i (addr, src, dst) -> (i, addr, src, dst))
+  Seq.mapi flattened ~f:(fun i (src, dst) -> (i, src, dst))
 
 let callstrings p root = Seq.empty
 
+(*
 (* use these to store callstring as an int *)
 let callstring_of_list = ()
 let list_of_callstring = ()
@@ -80,6 +79,7 @@ let kstrings_of_callmap k c =
  * a function to a k-sensitive call string.
  *)
 let kstrings p k = all_calls p |> (kstrings_of_callmap k)
+*)
 
 type call_site = int
 
@@ -115,16 +115,23 @@ the dedupe that and return as a seq
 
 exception EmptyCycle
 
+(* out-neighbors of v in g *)
+let neighborhood g v = (* could filter_map *)
+  Seq.filter ~f:(fun (i, src, dst) -> src = v) g
+  |> Seq.map ~f:(fun (i, src, dst) -> i)
+
 (* gives all walks up to length k in digraph G starting from vertex v *)
-let rec paths G k v =
-  let nbrhood = neighborhood(v) in
-  map ~f:(fun nbr -> v::(paths G (k-1) nbr)) nbrhood
+let rec paths g k v : call_site list list =
+  let nbrhood = neighborhood g v |> Seq.to_list in
+  List.map ~f:(fun nbr -> (paths g (k-1) nbr)) nbrhood
+  |> (List.fold ~init:[] ~f:(fun a b -> a @ b)) (* flatten *)
+  |> List.map ~f:(fun path -> v::path)
 
 (* return a list with duplicates removed *)
 (* polymorphic compare should just work here *)
 let rec dedupe_list = function
   | [] -> []
-  | x::l -> x::(dedupe_list (List.filter (fun x' -> x <> x') l))
+  | x::l -> x::(dedupe_list (List.filter ~f:(fun x' -> x <> x') l))
 
 let get_first_element = function
   | Singleton site -> site
@@ -133,7 +140,7 @@ let get_first_element = function
 
 let first_dupe_callstring l =
   let combine (first_dupe, current_set) element =
-    let first_element = get_first_element element
+    let first_element = get_first_element element in
     begin match first_dupe with
     | None ->
       if Set.mem current_set first_element then
@@ -159,6 +166,7 @@ let cycle_list callstring_list v_dupe =
     | x::l when get_first_element x = v_dupe -> l
     | _::l -> clear_start l
     | [] -> raise NoDupeFound
+  in
   let dupe_start = clear_start callstring_list in
   let rec collect_cycle collected = function
     | x::l when get_first_element x = v_dupe -> collected
