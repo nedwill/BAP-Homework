@@ -33,8 +33,13 @@ let callstrings p root = Seq.empty
 let callstring_of_list = ()
 let list_of_callstring = ()
 
-exception Unexpected
 exception SizeError
+exception Empty
+
+let rec end_of_list = function
+  | [] -> raise Empty
+  | [x] -> x
+  | x::l -> end_of_list l
 
 (* c is a call site info seq for now, should be a map, from all_calls *)
 let kstrings_of_callmap k c =
@@ -48,11 +53,13 @@ let kstrings_of_callmap k c =
       | x::l -> l @@ [element]
     else
       cs_list @@ [element]
+  in
   let g cs_list next_possible =
     Set.fold next_possible (grow_list cs_list)
+  in
   let f cs = 
     let cs_list = list_of_callstring cs in
-    let (_, _, last_dst) = List.end cs_list in (* exn if empty? *)
+    let (_, _, last_dst) = end_of_list cs_list in (* exn if empty? *)
     let next_possible =
       Map.filter ~f:(fun (_, src, _) -> src = last_dest) cs
     in
@@ -113,6 +120,12 @@ let rec paths G k v =
   let nbrhood = neighborhood(v) in
   map ~f:(fun nbr -> v::(paths G (k-1) nbr)) nbrhood
 
+(* return a list with duplicates removed *)
+(* polymorphic compare should just work here *)
+let rec dedupe_list = function
+  | [] -> []
+  | x::l -> x::(dedupe_list (List.filter (fun x' -> x <> x') l))
+
 let get_first_element = function
   | Singleton site -> site
   | Cycle x::_ -> x
@@ -156,7 +169,8 @@ let cycle_list callstring_list v_dupe =
 
 let rec prefix_matches l cycle_l =
   match (l, cycle_l) with
-  | ((Singleton x)::l, (Singleton x')::l') -> if x = x' then prefix_matches l l' else false
+  | ((Singleton x)::l, (Singleton x')::l') ->
+    if x = x' then prefix_matches l l' else false
   | ([], _::_) -> false
   | (_::_, []) -> false
   | ([], []) -> true
@@ -193,18 +207,24 @@ let callstring_of_callsite_list l =
     begin match first_dupe_callstring l' with
     | None -> l' (* no duplicates => no cycles remaining *)
     | Some v_dupe ->
-      let clist = cycle_list l' v_dupe in
+      let cycle_l = cycle_list l' v_dupe in
       (* replace cycles with one Cycle node *)
       let cycles_replaced = replace_cycles l' cycle_l in
-      callstring_of_callsite_list' cycles_replaced
+      dedupe_list cycles_replaced
+      |> callstring_of_callsite_list'
     end
   in
-  l |> List.map (fun x -> Singleton x) |> callstring_of_callsite_list'
+  List.map (fun x -> Singleton x) l
+  |> callstring_of_callsite_list'
+  |> dedupe_list
+
+exception Unimplemented
+let make_map callstring_list = raise Unimplemented
 
 (* Given a program, return a table m where m maps from a function to
  * the acyclic call string.
  *)
-let astrings = ()
+let astrings p = p |> all_calls |> callstring_of_callsite_list |> make_map
 
 (* Given a call string table and a root r, generate a call string tree. *)
 let cstree_of_table = ()

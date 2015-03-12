@@ -117,8 +117,6 @@ map x::(recursive dfs) over N
 
 this will give us all paths up to length 2*|v|
 
-^^ this might be doable in ocamlgraph
-
 now need
 callstring_of_list:
 map everything to singletons to start
