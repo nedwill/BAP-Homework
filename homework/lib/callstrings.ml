@@ -74,6 +74,133 @@ let kstrings_of_callmap k c =
  *)
 let kstrings p k = all_calls p |> (kstrings_of_callmap k)
 
+type call_site = int
+
+type call_string =
+  | Singleton of call_site
+  | Cycle of call_site list
+
+(*
+get all paths of up to length k starting from vertex v:
+let N = nbh(v)
+map x::(recursive dfs) over N
+
+this will give us all paths up to length 2*|v|
+
+now need
+callstring_of_list:
+map everything to singletons to start
+
+loop:
+maintain set of seen vertices, fold over the list
+no duplicate: done
+first duplicate:
+  find list of elements in cycle
+  go through list, replacing every cycle with the cycle node
+  go through list, keeping only first cycle node
+  recurse
+
+in this case our table will be a seq.
+dedupe list
+then take all sublists for smaller sized graphs
+the dedupe that and return as a seq
+*)
+
+exception EmptyCycle
+
+(* gives all walks up to length k in digraph G starting from vertex v *)
+let rec paths G k v =
+  let nbrhood = neighborhood(v) in
+  map ~f:(fun nbr -> v::(paths G (k-1) nbr)) nbrhood
+
+let get_first_element = function
+  | Singleton site -> site
+  | Cycle x::_ -> x
+  | Cycle [] -> raise EmptyCycle
+
+let first_dupe_callstring l =
+  let combine (first_dupe, current_set) element =
+    let first_element = get_first_element element
+    begin match first_dupe with
+    | None ->
+      if Set.mem current_set first_element then
+        (Some first_element, current_set)
+      else
+        (None, Set.add current_set first_element)
+    | Some x -> (Some x, current_set)
+    end
+  in
+  fst (List.fold_left combine Set.empty l)
+
+exception NoDupeFound
+
+(* Takes a walk of callstring elements and a vertex
+   which is assumed to be the first duplicate element
+   and returns the cycle that begins with that duplicate
+   element.
+   e.g. cycle_list ([a;b;c;a;b;c], a) -> [a;b;c]
+   Note: We should have a unit test for this.
+ *)
+let cycle_list callstring_list v_dupe =
+  let rec clear_start = function
+    | x::l when get_first_element x = v_dupe -> l
+    | _::l -> clear_start l
+    | [] -> raise NoDupeFound
+  let dupe_start = clear_start callstring_list in
+  let rec collect_cycle collected = function
+    | x::l when get_first_element x = v_dupe -> collected
+    | x::l -> x::(collect_cycle l)
+    | [] -> raise NoDupeFound (* didn't find the other element *)
+  in
+  List.rev (collect_cycle [] dupe_start)
+
+let rec prefix_matches l cycle_l =
+  match (l, cycle_l) with
+  | ((Singleton x)::l, (Singleton x')::l') -> if x = x' then prefix_matches l l' else false
+  | ([], _::_) -> false
+  | (_::_, []) -> false
+  | ([], []) -> true
+
+exception NotMatching
+
+let rec drop_cycle l cycle_l =
+  match (l, cycle_l) with
+  | (x'::l', x''::l'') ->
+    if x' <> x'' then
+      raise NotMatching
+    else
+      drop_cycle l' l''
+  | (_, []) -> l
+  | _ -> raise NotMatching
+
+(* replace runs of singletons in l with Cycle (cycle_l) *)
+let rec replace_cycles l cycle_l =
+  let rec replace_cycles' l =
+    match l with
+    | [] -> []
+    | x::l' ->
+      if prefix_matches (x::l') cycle_l then
+        let dropped = (drop_cycle_prefix l' cycle_l) |> replace_cycles' in
+        (Cycle cycle_l)::dropped
+      else
+        x::(replace_cycles' l)
+  in
+  replace_cycles' l
+
+(* takes a walk of callsites (ints) from a graph and makes a callstring *)
+let callstring_of_callsite_list l =
+  let callstring_of_callsite_list' l' =
+    begin match first_dupe_callstring l' with
+    | None -> l' (* no duplicates => no cycles remaining *)
+    | Some v_dupe ->
+      let clist = cycle_list l' v_dupe in
+      (* replace cycles with one Cycle node *)
+      let cycles_replaced = replace_cycles l' cycle_l in
+      callstring_of_callsite_list' cycles_replaced
+    end
+  in
+  l |> List.map (fun x -> Singleton x) |> callstring_of_callsite_list'
+
 (* Given a program, return a table m where m maps from a function to
  * the acyclic call string.
  *)
