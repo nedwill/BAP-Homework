@@ -64,7 +64,7 @@ module CallstringGraph = struct
     | Root (_, _) -> None
     | Node ((i, _src, _dst), _)
     | Recursive (i, _src, _dst)
-    | External (i, _src, _dst) -> Some i
+    | External (i, _src, _dst)
     | Terminal (i, _src, _dst) -> Some i
 
   (* Recursive iterator over the ADT. Builds up the callstring in the calls *)
