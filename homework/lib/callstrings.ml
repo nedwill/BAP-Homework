@@ -27,17 +27,17 @@ let all_calls p =
 
 let callstrings _p _root = Seq.empty
 
-(*
-(* use these to store callstring as an int *)
-let callstring_of_list = ()
-let list_of_callstring = ()
-
 exception Empty
 
 let rec end_of_list = function
   | [] -> raise Empty
   | [x] -> x
   | _::l -> end_of_list l
+
+(*
+(* use these to store callstring as an int *)
+let callstring_of_list = ()
+let list_of_callstring = ()
 
 (* c is a call site info seq for now, should be a map, from all_calls *)
 let kstrings_of_callmap k c =
@@ -93,15 +93,16 @@ let flatten_list = List.fold ~init:[] ~f:(fun a b -> a @ b)
 exception NoI
 exception NotOneI
 
+(* given a graph g and a callsite v, what is the destination of that call? *)
+let get_target_dst g v =
+  match List.filter ~f:(fun (i, _src, _dst) -> i = v) g with
+  | [] -> raise NoI
+  | [(_i, _src, dst)] -> dst (* map as seq :/ *)
+  | _::_ -> raise NotOneI
+
 (* out-neighbors of v in g *)
 let neighborhood (g : (call_site * bytes * bytes) list) (v : call_site) : call_site list = (* could filter_map *)
-  let target_dst =
-    begin match List.filter ~f:(fun (i, _src, _dst) -> i = v) g with
-    | [] -> raise NoI
-    | [(_i, _src, dst)] -> dst (* map as seq :/ *)
-    | _::_ -> raise NotOneI
-    end
-  in
+  let target_dst = get_target_dst g v in
   List.filter ~f:(fun (_i, src, _dst) -> src = target_dst) g
   |> List.map ~f:(fun (i, _src, _dst) -> i)
 
@@ -220,19 +221,18 @@ let callstring_of_callsite_list (l : call_site list) : call_string list =
 
 exception Empty
 
-let rec split_on_last : call_string list -> (call_site * call_string list) = function
-  | [] -> raise Empty
-  | x::[] ->
-    begin match x with
-    | Singleton x' -> (x', [])
-    | Cycle (x'::_) -> (x', [])
-    | Cycle ([]) -> raise EmptyCycle
-    end
-  | x::l -> let (x', l') = split_on_last l in (x', x::l')
+(* bap doesn't have Table.of_alist_exn or Table.of_alist_fold :( *)
+let rec compress (* 'a -> ('b * call_string list list) list *) = function
+  | [] -> []
+  | (i, lst)::l ->
+    let (matching, not_matching) = List.partition_tf ~f:(fun (i', _) -> i = i') l in
+    let all_i_lists = List.fold ~f:(fun l' (_i, lst') -> lst'::l') ~init:[lst] matching in
+    (i, all_i_lists)::(compress not_matching)
 
-let make_map (callstring_list : call_string list list) =
-  List.map ~f:split_on_last callstring_list
-  |> Int.Map.of_alist_exn
+let make_map (g : (call_site * bytes * bytes) list) (callstring_list : call_string list list) =
+  List.map ~f:(fun x -> (end_of_list x |> get_first_element |> get_target_dst g, x)) callstring_list
+  |> compress
+  |> List.fold ~init:Table.empty ~f:(fun tb (x,y) -> Table.add tb x y |> ok_exn)
 
 let get_subpaths_one_path (l : call_string list) =
   let rec subpaths l a =
@@ -256,4 +256,7 @@ let astrings p =
     paths g num_vertices i
     |> List.map ~f:callstring_of_callsite_list
     |> get_subpaths_list
-  ) g |> flatten_list |> dedupe_list |> make_map
+  ) g
+  |> flatten_list
+  |> dedupe_list
+  |> make_map g
