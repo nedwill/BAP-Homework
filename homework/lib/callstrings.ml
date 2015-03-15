@@ -21,9 +21,9 @@ let all_calls p =
   let string_tab = Table.mapi p.symbols ~f:(
     fun mem src ->
       Seq.map (calls p.symbols (Disasm.insns_at_mem p.program mem)) ~f:(
-        fun dst -> (src, dst))) in
+        fun dst -> (mem, src, dst))) in (* include mem for src to get mapping *)
   let flattened = Seq.concat_map ~f:snd (Table.to_sequence string_tab) in
-  Seq.mapi flattened ~f:(fun i (src, dst) -> (i, src, dst))
+  Seq.mapi flattened ~f:(fun i (src_mem, src, dst) -> (i, src_mem, src, dst))
 
 let callstrings _p _root = Seq.empty
 
@@ -95,19 +95,19 @@ exception NotOneI
 
 (* given a graph g and a callsite v, what is the destination of that call? *)
 let get_target_dst g v =
-  match List.filter ~f:(fun (i, _src, _dst) -> i = v) g with
+  match List.filter ~f:(fun (i, _src_mem, _src, _dst) -> i = v) g with
   | [] -> raise NoI
-  | [(_i, _src, dst)] -> dst (* map as seq :/ *)
+  | [(_i, _src_mem, _src, dst)] -> dst (* map as seq :/ *)
   | _::_ -> raise NotOneI
 
 (* out-neighbors of v in g *)
-let neighborhood (g : (call_site * bytes * bytes) list) (v : call_site) : call_site list = (* could filter_map *)
+let neighborhood (g : (call_site * mem * bytes * bytes) list) (v : call_site) : call_site list = (* could filter_map *)
   let target_dst = get_target_dst g v in
-  List.filter ~f:(fun (_i, src, _dst) -> src = target_dst) g
-  |> List.map ~f:(fun (i, _src, _dst) -> i)
+  List.filter ~f:(fun (_i, _src_mem, src, _dst) -> src = target_dst) g
+  |> List.map ~f:(fun (i, _src_mem, _src, _dst) -> i)
 
 (* gives all walks up to length k in digraph G starting from vertex v *)
-let rec paths (g : (call_site * bytes * bytes) list) k v : call_site list list =
+let rec paths (g : (call_site * mem * bytes * bytes) list) k v : call_site list list =
   let nbrhood = neighborhood g v in
   List.map ~f:(fun nbr -> (paths g (k-1) nbr)) nbrhood
   |> flatten_list
@@ -219,19 +219,21 @@ let callstring_of_callsite_list (l : call_site list) : call_string list =
   |> callstring_of_callsite_list'
   |> dedupe_list
 
-exception Empty
+let find_srcmem_dst g bts : mem =
+  List.find_exn g ~f:(fun (_i, _src_mem, src, _dst) -> src = bts)
+  |> (fun (_i, src_mem, _src, _dst) -> src_mem)
 
 (* bap doesn't have Table.of_alist_exn or Table.of_alist_fold :( *)
-let rec compress (* 'a -> ('b * call_string list list) list *) = function
+let rec compress g : 'a -> (mem * call_string list list) list = function
   | [] -> []
   | (i, lst)::l ->
     let (matching, not_matching) = List.partition_tf ~f:(fun (i', _) -> i = i') l in
     let all_i_lists = List.fold ~f:(fun l' (_i, lst') -> lst'::l') ~init:[lst] matching in
-    (i, all_i_lists)::(compress not_matching)
+    (find_srcmem_dst g i, all_i_lists)::(compress g not_matching)
 
-let make_map (g : (call_site * bytes * bytes) list) (callstring_list : call_string list list) =
+let make_map (g : (call_site * mem * bytes * bytes) list) (callstring_list : call_string list list) =
   List.map ~f:(fun x -> (end_of_list x |> get_first_element |> get_target_dst g, x)) callstring_list
-  |> compress
+  |> compress g
   |> List.fold ~init:Table.empty ~f:(fun tb (x,y) -> Table.add tb x y |> ok_exn)
 
 let get_subpaths_one_path (l : call_string list) =
@@ -244,16 +246,18 @@ let get_subpaths_one_path (l : call_string list) =
   subpaths l [] |> flatten_list
 
 let get_subpaths_list (l : call_string list list) =
-  List.map ~f:get_subpaths_one_path l |> dedupe_list
+  List.map l ~f:get_subpaths_one_path |> dedupe_list
+
+  (* (i, src_mem, src, dst) *)
 
 (* Given a program, return a table m where m maps from a function to
  * the acyclic call string.
  *)
 let astrings p =
   let g = p |> all_calls |> Seq.to_list in
-  let num_vertices = 2*(List.length g) in
-  List.map ~f:(fun (i, _src, _dst) ->
-    paths g num_vertices i
+  let max_path_length = 2*(List.length g) in
+  List.map ~f:(fun (i, _src_mem, _src, _dst) ->
+    paths g max_path_length i
     |> List.map ~f:callstring_of_callsite_list
     |> get_subpaths_list
   ) g
