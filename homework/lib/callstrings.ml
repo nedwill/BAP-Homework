@@ -2,6 +2,14 @@ open Core_kernel.Std
 open Bap.Std
 open Program_visitor
 
+type call_site = int
+
+type astring_element =
+  | Singleton of call_site
+  | Cycle of call_site list
+
+type astring = astring_element list
+
 let calls syms insns =
   Seq.concat_map insns ~f:(
     fun (_mem, insn) ->
@@ -34,60 +42,11 @@ let rec end_of_list = function
   | [x] -> x
   | _::l -> end_of_list l
 
-(*
-(* use these to store callstring as an int *)
-let callstring_of_list = ()
-let list_of_callstring = ()
 
-(* c is a call site info seq for now, should be a map, from all_calls *)
-let kstrings_of_callmap k c =
-  let grow_list cs_list element = (* this could be refactored *)
-    let len = length cs_list in
-    if len > k then
-      raise SizeError
-    else if len = k then
-      match cs_list with
-      | [] -> raise SizeError
-      | x::l -> l @@ [element]
-    else
-      cs_list @@ [element]
-  in
-  let g cs_list next_possible =
-    Set.fold next_possible (grow_list cs_list)
-  in
-  let f cs = 
-    let cs_list = list_of_callstring cs in
-    let (_, _, last_dst) = end_of_list cs_list in (* exn if empty? *)
-    let next_possible =
-      Map.filter ~f:(fun (_, src, _) -> src = last_dest) cs
-    in
-    let cs' = Map.fold next_possible Set.empty g
-  in
-  let rec kstrings_of_callmap' s =
-    let sz = length s in
-    let new_callstrings_sets = Seq.map f s in
-    let new_callstrings = Fold Set.empty Set.union new_callstrings_sets in
-    if length new_callstrings = sz then
-      new_callstrings
-    else
-      kstrings_of_callmap' new_callstrings
-  in
-  kstrings_of_callmap' Set.empty
-
-(* Given a program and an integer k, return a table m where m maps from
- * a function to a k-sensitive call string.
- *)
-let kstrings p k = all_calls p |> (kstrings_of_callmap k)
-*)
-
-type call_site = int
-
-type call_string =
-  | Singleton of call_site
-  | Cycle of call_site list
 
 exception EmptyCycle
 
+(* should be List.concat *)
 let flatten_list = List.fold ~init:[] ~f:(fun a b -> a @ b)
 
 exception NoI
@@ -178,7 +137,7 @@ let rec prefix_matches l (cycle_l : call_site list) =
 
 exception NotMatching
 
-let rec drop_cycle_prefix l (cycle_l : call_site list) : call_string list =
+let rec drop_cycle_prefix l (cycle_l : call_site list) : astring =
   match (l, cycle_l) with
   | ((Singleton x')::l', x''::l'') ->
     if x' <> x'' then
@@ -189,13 +148,13 @@ let rec drop_cycle_prefix l (cycle_l : call_site list) : call_string list =
   | _ -> raise NotMatching
 
 (* replace runs of singletons in l with Cycle (cycle_l) *)
-let replace_cycles (l : call_string list) (cycle_l : call_site list) : call_string list =
-  let rec replace_cycles' (l : call_string list) : call_string list =
+let replace_cycles (l : astring) (cycle_l : call_site list) : astring =
+  let rec replace_cycles' (l : astring) : astring =
     match l with
     | [] -> []
     | x::l' ->
       if prefix_matches (x::l') cycle_l then
-        let dropped : call_string list = drop_cycle_prefix l' cycle_l
+        let dropped : astring = drop_cycle_prefix l' cycle_l
         |> replace_cycles' in (* careful, not tail recursive *)
         (Cycle cycle_l)::dropped
       else
@@ -204,7 +163,7 @@ let replace_cycles (l : call_string list) (cycle_l : call_site list) : call_stri
   replace_cycles' l
 
 (* takes a walk of callsites (ints) from a graph and makes a callstring list *)
-let callstring_of_callsite_list (l : call_site list) : call_string list =
+let callstring_of_callsite_list (l : call_site list) : astring =
   let rec callstring_of_callsite_list' l' =
     begin match first_dupe_callstring l' with
     | None -> l' (* no duplicates => no cycles remaining *)
@@ -224,19 +183,19 @@ let find_srcmem_dst g bts : mem =
   |> (fun (_i, src_mem, _src, _dst) -> src_mem)
 
 (* bap doesn't have Table.of_alist_exn or Table.of_alist_fold :( *)
-let rec compress g : 'a -> (mem * call_string list list) list = function
+let rec compress g : 'a -> (mem * astring list) list = function
   | [] -> []
   | (i, lst)::l ->
     let (matching, not_matching) = List.partition_tf ~f:(fun (i', _) -> i = i') l in
     let all_i_lists = List.fold ~f:(fun l' (_i, lst') -> lst'::l') ~init:[lst] matching in
     (find_srcmem_dst g i, all_i_lists)::(compress g not_matching)
 
-let make_map (g : (call_site * mem * bytes * bytes) list) (callstring_list : call_string list list) =
+let make_map (g : (call_site * mem * bytes * bytes) list) (callstring_list : astring list) =
   List.map ~f:(fun x -> (end_of_list x |> get_first_element |> get_target_dst g, x)) callstring_list
   |> compress g
   |> List.fold ~init:Table.empty ~f:(fun tb (x,y) -> Table.add tb x y |> ok_exn)
 
-let get_subpaths_one_path (l : call_string list) =
+let get_subpaths_one_path (l : astring) =
   let rec subpaths l a =
     begin match l with
     | [] -> a (* don't include empty path *)
@@ -245,7 +204,7 @@ let get_subpaths_one_path (l : call_string list) =
   in
   subpaths l [] |> flatten_list
 
-let get_subpaths_list (l : call_string list list) =
+let get_subpaths_list (l : astring list) =
   List.map l ~f:get_subpaths_one_path |> dedupe_list
 
   (* (i, src_mem, src, dst) *)
