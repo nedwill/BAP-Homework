@@ -2,17 +2,22 @@ open Core_kernel.Std
 open Bap.Std
 open Program_visitor
 
+(* Tree Types *)
 type func = string
 type call = int * func * func
 type node = Terminal of call | Recursive of call | External of call | Node of call * node seq | Root of func * node seq
 
+(* Astring Types *)
 type call_site = int
-
 type astring_element =
   | Singleton of call_site
   | Cycle of call_site list
-
 type astring = astring_element list
+
+exception Empty
+exception EmptyCycle
+exception NoI
+exception NotOneI
 
 let calls syms insns =
   Seq.concat_map insns ~f:(
@@ -147,20 +152,10 @@ let output_callstring_graph p root outfile =
   let module Dot = Graph.Graphviz.Dot (CallstringGraph) in
   Out_channel.with_file outfile ~f:(fun out -> Dot.output_graph out call_tree)
 
-exception Empty
-
 let rec end_of_list = function
   | [] -> raise Empty
   | [x] -> x
   | _::l -> end_of_list l
-
-exception EmptyCycle
-
-(* should be List.concat *)
-let flatten_list = List.fold ~init:[] ~f:(fun a b -> a @ b)
-
-exception NoI
-exception NotOneI
 
 (* given a graph g and a callsite v, what is the destination of that call? *)
 let get_target_dst g v =
@@ -179,7 +174,7 @@ let neighborhood (g : (call_site * mem * bytes * bytes) list) (v : call_site) : 
 let rec paths (g : (call_site * mem * bytes * bytes) list) k v : call_site list list =
   let nbrhood = neighborhood g v in
   List.map ~f:(fun nbr -> (paths g (k-1) nbr)) nbrhood
-  |> flatten_list
+  |> List.concat
   |> List.map ~f:(fun path -> v::path)
 
 (* return a list with duplicates removed *)
@@ -312,7 +307,7 @@ let get_subpaths_one_path (l : astring) =
       | _::l' -> subpaths l' (l::a)
     end
   in
-  subpaths l [] |> flatten_list
+  subpaths l [] |> List.concat
 
 let get_subpaths_list (l : astring list) =
   List.map l ~f:get_subpaths_one_path |> dedupe_list
@@ -330,6 +325,6 @@ let astrings p =
       |> List.map ~f:callstring_of_callsite_list
       |> get_subpaths_list
     ) g
-  |> flatten_list
+  |> List.concat
   |> dedupe_list
   |> make_map g
