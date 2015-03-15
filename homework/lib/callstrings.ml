@@ -14,10 +14,13 @@ type astring_element =
   | Cycle of call_site list
 type astring = astring_element list
 
-exception Empty
+(* User-Defined Exceptions *)
+exception EmptyList
 exception EmptyCycle
 exception NoI
 exception NotOneI
+exception NoDupeFound
+exception NotMatching
 
 let calls syms insns =
   Seq.concat_map insns ~f:(
@@ -34,14 +37,7 @@ let calls syms insns =
           else calls
       end) in visitor#run (Insn.bil insn) Seq.empty)
 
-let all_calls_mem p =
-  let string_tab = Table.mapi p.symbols ~f:(
-      fun mem src ->
-        Seq.map (calls p.symbols (Disasm.insns_at_mem p.program mem)) ~f:(
-          fun dst -> (mem, src, dst))) in (* include mem for src to get mapping *)
-  let flattened = Seq.concat_map ~f:snd (Table.to_sequence string_tab) in
-  Seq.mapi flattened ~f:(fun i (src_mem, src, dst) -> (i, src_mem, src, dst))
-
+(* Call Tree *)
 let all_calls p =
   let string_tab = Table.mapi p.symbols ~f:(
       fun mem src ->
@@ -152,8 +148,17 @@ let output_callstring_graph p root outfile =
   let module Dot = Graph.Graphviz.Dot (CallstringGraph) in
   Out_channel.with_file outfile ~f:(fun out -> Dot.output_graph out call_tree)
 
+(* Astrings *)
+let all_calls_mem p =
+  let string_tab = Table.mapi p.symbols ~f:(
+      fun mem src ->
+        Seq.map (calls p.symbols (Disasm.insns_at_mem p.program mem)) ~f:(
+          fun dst -> (mem, src, dst))) in (* include mem for src to get mapping *)
+  let flattened = Seq.concat_map ~f:snd (Table.to_sequence string_tab) in
+  Seq.mapi flattened ~f:(fun i (src_mem, src, dst) -> (i, src_mem, src, dst))
+
 let rec end_of_list = function
-  | [] -> raise Empty
+  | [] -> raise EmptyList
   | [x] -> x
   | _::l -> end_of_list l
 
@@ -165,13 +170,13 @@ let get_target_dst g v =
   | _::_ -> raise NotOneI
 
 (* out-neighbors of v in g *)
-let neighborhood (g : (call_site * mem * bytes * bytes) list) (v : call_site) : call_site list = (* could filter_map *)
+let neighborhood g v = (* could filter_map *)
   let target_dst = get_target_dst g v in
   List.filter ~f:(fun (_i, _src_mem, src, _dst) -> src = target_dst) g
   |> List.map ~f:(fun (i, _src_mem, _src, _dst) -> i)
 
 (* gives all walks up to length k in digraph G starting from vertex v *)
-let rec paths (g : (call_site * mem * bytes * bytes) list) k v : call_site list list =
+let rec paths g =
   let nbrhood = neighborhood g v in
   List.map ~f:(fun nbr -> (paths g (k-1) nbr)) nbrhood
   |> List.concat
@@ -202,8 +207,6 @@ let first_dupe_callstring l =
   in
   List.fold l ~init:(None, Set.empty ~comparator:Int.comparator) ~f:combine |> fst
 
-exception NoDupeFound
-
 (* Takes a walk of callstring elements and a vertex
    which is assumed to be the first duplicate element
    and returns the cycle that begins with that duplicate
@@ -211,7 +214,7 @@ exception NoDupeFound
    e.g. cycle_list ([a;b;c;a;b;c], a) -> [a;b;c]
    Note: We should have a unit test for this.
 *)
-let cycle_list callstring_list v_dupe : call_site list =
+let cycle_list callstring_list v_dupe =
   let rec clear_start = function
     | x::l when get_first_element x = v_dupe -> l
     | _::l -> clear_start l
@@ -231,7 +234,7 @@ let cycle_list callstring_list v_dupe : call_site list =
   in
   collect_cycle dupe_start |> List.rev
 
-let rec prefix_matches l (cycle_l : call_site list) =
+let rec prefix_matches l cycle_l =
   match (l, cycle_l) with
   | ((Singleton x)::l, x'::l') ->
     if x = x' then prefix_matches l l' else false
@@ -240,9 +243,7 @@ let rec prefix_matches l (cycle_l : call_site list) =
   | (_::_, []) -> false
   | ([], []) -> true
 
-exception NotMatching
-
-let rec drop_cycle_prefix l (cycle_l : call_site list) : astring =
+let rec drop_cycle_prefix l cycle_l =
   match (l, cycle_l) with
   | ((Singleton x')::l', x''::l'') ->
     if x' <> x'' then
@@ -253,13 +254,13 @@ let rec drop_cycle_prefix l (cycle_l : call_site list) : astring =
   | _ -> raise NotMatching
 
 (* replace runs of singletons in l with Cycle (cycle_l) *)
-let replace_cycles (l : astring) (cycle_l : call_site list) : astring =
-  let rec replace_cycles' (l : astring) : astring =
+let replace_cycles l cycle_l =
+  let rec replace_cycles' l =
     match l with
     | [] -> []
     | x::l' ->
       if prefix_matches (x::l') cycle_l then
-        let dropped : astring = drop_cycle_prefix l' cycle_l
+        let dropped = drop_cycle_prefix l' cycle_l
                                 |> replace_cycles' in (* careful, not tail recursive *)
         (Cycle cycle_l)::dropped
       else
@@ -268,7 +269,7 @@ let replace_cycles (l : astring) (cycle_l : call_site list) : astring =
   replace_cycles' l
 
 (* takes a walk of callsites (ints) from a graph and makes a callstring list *)
-let callstring_of_callsite_list (l : call_site list) : astring =
+let callstring_of_callsite_list l =
   let rec callstring_of_callsite_list' l' =
     begin match first_dupe_callstring l' with
       | None -> l' (* no duplicates => no cycles remaining *)
@@ -283,24 +284,24 @@ let callstring_of_callsite_list (l : call_site list) : astring =
   |> callstring_of_callsite_list'
   |> dedupe_list
 
-let find_srcmem_dst g bts : mem =
+let find_srcmem_dst g bts =
   List.find_exn g ~f:(fun (_i, _src_mem, src, _dst) -> src = bts)
   |> (fun (_i, src_mem, _src, _dst) -> src_mem)
 
 (* bap doesn't have Table.of_alist_exn or Table.of_alist_fold :( *)
-let rec compress g : 'a -> (mem * astring list) list = function
+let rec compress g = function
   | [] -> []
   | (i, lst)::l ->
     let (matching, not_matching) = List.partition_tf ~f:(fun (i', _) -> i = i') l in
     let all_i_lists = List.fold ~f:(fun l' (_i, lst') -> lst'::l') ~init:[lst] matching in
     (find_srcmem_dst g i, all_i_lists)::(compress g not_matching)
 
-let make_map (g : (call_site * mem * bytes * bytes) list) (callstring_list : astring list) =
+let make_map g callstring_list =
   List.map ~f:(fun x -> (end_of_list x |> get_first_element |> get_target_dst g, x)) callstring_list
   |> compress g
   |> List.fold ~init:Table.empty ~f:(fun tb (x,y) -> Table.add tb x y |> ok_exn)
 
-let get_subpaths_one_path (l : astring) =
+let get_subpaths_one_path l =
   let rec subpaths l a =
     begin match l with
       | [] -> a (* don't include empty path *)
@@ -309,7 +310,7 @@ let get_subpaths_one_path (l : astring) =
   in
   subpaths l [] |> List.concat
 
-let get_subpaths_list (l : astring list) =
+let get_subpaths_list l =
   List.map l ~f:get_subpaths_one_path |> dedupe_list
 
 (* (i, src_mem, src, dst) *)
