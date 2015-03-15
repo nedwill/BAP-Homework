@@ -289,6 +289,10 @@ let find_srcmem_dst g bts =
   |> (fun (_i, src_mem, _src, _dst) -> src_mem)
 
 (* bap doesn't have Table.of_alist_exn or Table.of_alist_fold :( *)
+(* Take a ('a, 'b) list where the keys are not necessarily unique
+   and make a ('a, 'b list) list where the keys are unique and all
+   values seen for a given k are in placed in a list. *)
+(* For example, compress [(3, 5); (5, 6); (3, 4)] -> [(3, [5; 4]), (5, [6])] *)
 let rec compress g = function
   | [] -> []
   | (i, lst)::l ->
@@ -296,11 +300,25 @@ let rec compress g = function
     let all_i_lists = List.fold ~f:(fun l' (_i, lst') -> lst'::l') ~init:[lst] matching in
     (find_srcmem_dst g i, all_i_lists)::(compress g not_matching)
 
-let make_map g callstring_list =
-  List.map ~f:(fun x -> (end_of_list x |> get_first_element |> get_target_dst g, x)) callstring_list
-  |> compress g
-  |> List.fold ~init:Table.empty ~f:(fun tb (x,y) -> Table.add tb x y |> ok_exn)
+let table_of_list = List.fold ~init:Table.empty ~f:(fun tb (x,y) -> Table.add tb x y |> ok_exn)
 
+(* Given an astring and the callsite graph, determine the destination
+   of the last callsite.
+ *)
+let get_astring_dest astr g =
+  end_of_list astr (* get last element of astring *)
+  |> get_first_element (* get first element (if cycle, then first element) *)
+  |> get_target_dst g (* get the target of the call *)
+
+(* Given a list of astrings, make a map from each function to the list of
+   all acyclic call strings for that function.
+ *)
+let make_map g astr_list =
+  List.map ~f:(fun astr -> (get_astring_dest astr g, x)) astr_list
+  |> compress g
+  |> table_of_list
+
+(* Given a path l, find all subpaths. *)
 let get_subpaths_one_path l =
   let rec subpaths l a =
     begin match l with
@@ -313,7 +331,10 @@ let get_subpaths_one_path l =
 let get_subpaths_list l =
   List.map l ~f:get_subpaths_one_path |> dedupe_list
 
-(* (i, src_mem, src, dst) *)
+let get_astrings ~max_path_length (i, _src_mem, _src, _dst) =
+  paths g max_path_length i
+  |> List.map ~f:callstring_of_callsite_list
+  |> get_subpaths_list
 
 (* Given a program, return a table m where m maps from a function to
  * the acyclic call string.
@@ -321,11 +342,7 @@ let get_subpaths_list l =
 let astrings p =
   let g = p |> all_calls_mem |> Seq.to_list in
   let max_path_length = 2*(List.length g) in
-  List.map ~f:(fun (i, _src_mem, _src, _dst) ->
-      paths g max_path_length i
-      |> List.map ~f:callstring_of_callsite_list
-      |> get_subpaths_list
-    ) g
+  List.map ~f:(get_astrings ~max_path_length) g
   |> List.concat
   |> dedupe_list
   |> make_map g
