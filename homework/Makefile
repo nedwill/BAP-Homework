@@ -1,2 +1,4 @@
 (all):
-	bapbuild lib/callstrings.cmi lib/callstrings.cmx -I lib kstrings.plugin
+	bapbuild lib/callstrings.cmi lib/callstrings.cmx -I lib astrings.plugin
+clean:
+	rm -r _build
