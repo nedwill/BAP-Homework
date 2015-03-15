@@ -31,33 +31,33 @@ let calls syms insns =
 
 let all_calls_mem p =
   let string_tab = Table.mapi p.symbols ~f:(
-    fun mem src ->
-      Seq.map (calls p.symbols (Disasm.insns_at_mem p.program mem)) ~f:(
-        fun dst -> (mem, src, dst))) in (* include mem for src to get mapping *)
+      fun mem src ->
+        Seq.map (calls p.symbols (Disasm.insns_at_mem p.program mem)) ~f:(
+          fun dst -> (mem, src, dst))) in (* include mem for src to get mapping *)
   let flattened = Seq.concat_map ~f:snd (Table.to_sequence string_tab) in
   Seq.mapi flattened ~f:(fun i (src_mem, src, dst) -> (i, src_mem, src, dst))
 
 let all_calls p =
   let string_tab = Table.mapi p.symbols ~f:(
-    fun mem src ->
-      Seq.map (calls p.symbols (Disasm.insns_at_mem p.program mem)) ~f:(
-        fun dst -> (src, dst))) in (* include mem for src to get mapping *)
+      fun mem src ->
+        Seq.map (calls p.symbols (Disasm.insns_at_mem p.program mem)) ~f:(
+          fun dst -> (src, dst))) in (* include mem for src to get mapping *)
   let flattened = Seq.concat_map ~f:snd (Table.to_sequence string_tab) in
   Seq.mapi flattened ~f:(fun i (src, dst) -> (i, src, dst))
 
 (* Recursive helper function to build the callstring tree *)
 let rec callstring_tree_from root calls call =
   let rootcalls = Seq.filter calls ~f:(
-    fun (_i, src, _dst) -> (src = root)) in
+      fun (_i, src, _dst) -> (src = root)) in
   let children = (Seq.map rootcalls ~f:(
-    fun (i, src, dst) ->
-      let nextcall = (i,src,dst) in
-      if src = dst then (Recursive nextcall) else
-      (callstring_tree_from dst calls (Some nextcall)))) in
+      fun (i, src, dst) ->
+        let nextcall = (i,src,dst) in
+        if src = dst then (Recursive nextcall) else
+          (callstring_tree_from dst calls (Some nextcall)))) in
   match call with
-    (* If we're not reached from a call, then we're the root *)
-    | None -> Root (root, children)
-    | Some c -> if Seq.is_empty children then Terminal(c) else Node (c, children)
+  (* If we're not reached from a call, then we're the root *)
+  | None -> Root (root, children)
+  | Some c -> if Seq.is_empty children then Terminal(c) else Node (c, children)
 
 let callstring_tree p root = callstring_tree_from root (all_calls p) None
 
@@ -87,12 +87,12 @@ module CallstringGraph = struct
   let rec iter_v f calls t =
     let cn = get_callnum t in
     let calls = (match cn with
-      | Some i -> i :: calls
-      | None -> calls) in
+        | Some i -> i :: calls
+        | None -> calls) in
     (f (t, calls); match t with
-    | Root (_, children) -> f (t, []); Seq.iter children ~f:(iter_v f [])
-    | Node (_, children) -> Seq.iter children ~f:(iter_v f (calls))
-    | _ -> ())
+      | Root (_, children) -> f (t, []); Seq.iter children ~f:(iter_v f [])
+      | Node (_, children) -> Seq.iter children ~f:(iter_v f (calls))
+      | _ -> ())
 
   let iter_vertex f t = iter_v f [] t
 
@@ -100,16 +100,16 @@ module CallstringGraph = struct
   let rec iter_e f calls t =
     let cn = get_callnum t in
     let calls = (match cn with
-      | Some i -> i :: calls
-      | None -> calls) in
-    match t with
-    | Node (_, children) | Root (_, children)-> Seq.iter children ~f:(
-      fun next ->
-        let nextnum = get_callnum next in
-        let nextcalls = (match nextnum with
         | Some i -> i :: calls
         | None -> calls) in
-        f ((t, calls), (next, nextcalls)); iter_e f (calls) next; ())
+    match t with
+    | Node (_, children) | Root (_, children)-> Seq.iter children ~f:(
+        fun next ->
+          let nextnum = get_callnum next in
+          let nextcalls = (match nextnum with
+              | Some i -> i :: calls
+              | None -> calls) in
+          f ((t, calls), (next, nextcalls)); iter_e f (calls) next; ())
     | _ -> ()
 
   let iter_edges_e f t = iter_e f [] t
@@ -197,12 +197,12 @@ let first_dupe_callstring l =
   let combine (first_dupe, current_set) element =
     let first_element = get_first_element element in
     begin match first_dupe with
-    | None ->
-      if Set.mem current_set first_element then
-        (Some first_element, current_set)
-      else
-        (None, Set.add current_set first_element)
-    | Some x -> (Some x, current_set)
+      | None ->
+        if Set.mem current_set first_element then
+          (Some first_element, current_set)
+        else
+          (None, Set.add current_set first_element)
+      | Some x -> (Some x, current_set)
     end
   in
   List.fold l ~init:(None, Set.empty ~comparator:Int.comparator) ~f:combine |> fst
@@ -215,7 +215,7 @@ exception NoDupeFound
    element.
    e.g. cycle_list ([a;b;c;a;b;c], a) -> [a;b;c]
    Note: We should have a unit test for this.
- *)
+*)
 let cycle_list callstring_list v_dupe : call_site list =
   let rec clear_start = function
     | x::l when get_first_element x = v_dupe -> l
@@ -224,8 +224,8 @@ let cycle_list callstring_list v_dupe : call_site list =
   in
   let start_list =
     begin match callstring_list with
-    | [] -> []
-    | _::l -> l
+      | [] -> []
+      | _::l -> l
     end
   in
   let dupe_start = clear_start start_list in
@@ -265,7 +265,7 @@ let replace_cycles (l : astring) (cycle_l : call_site list) : astring =
     | x::l' ->
       if prefix_matches (x::l') cycle_l then
         let dropped : astring = drop_cycle_prefix l' cycle_l
-        |> replace_cycles' in (* careful, not tail recursive *)
+                                |> replace_cycles' in (* careful, not tail recursive *)
         (Cycle cycle_l)::dropped
       else
         x::(replace_cycles' l')
@@ -276,12 +276,12 @@ let replace_cycles (l : astring) (cycle_l : call_site list) : astring =
 let callstring_of_callsite_list (l : call_site list) : astring =
   let rec callstring_of_callsite_list' l' =
     begin match first_dupe_callstring l' with
-    | None -> l' (* no duplicates => no cycles remaining *)
-    | Some v_dupe ->
-      let cycle_l = cycle_list l' v_dupe in
-      (* replace cycles with one Cycle node *)
-      replace_cycles l' cycle_l |> dedupe_list
-      |> callstring_of_callsite_list'
+      | None -> l' (* no duplicates => no cycles remaining *)
+      | Some v_dupe ->
+        let cycle_l = cycle_list l' v_dupe in
+        (* replace cycles with one Cycle node *)
+        replace_cycles l' cycle_l |> dedupe_list
+        |> callstring_of_callsite_list'
     end
   in
   List.map l ~f:(fun x -> Singleton x)
@@ -308,8 +308,8 @@ let make_map (g : (call_site * mem * bytes * bytes) list) (callstring_list : ast
 let get_subpaths_one_path (l : astring) =
   let rec subpaths l a =
     begin match l with
-    | [] -> a (* don't include empty path *)
-    | _::l' -> subpaths l' (l::a)
+      | [] -> a (* don't include empty path *)
+      | _::l' -> subpaths l' (l::a)
     end
   in
   subpaths l [] |> flatten_list
@@ -317,19 +317,19 @@ let get_subpaths_one_path (l : astring) =
 let get_subpaths_list (l : astring list) =
   List.map l ~f:get_subpaths_one_path |> dedupe_list
 
-  (* (i, src_mem, src, dst) *)
+(* (i, src_mem, src, dst) *)
 
 (* Given a program, return a table m where m maps from a function to
  * the acyclic call string.
- *)
+*)
 let astrings p =
   let g = p |> all_calls_mem |> Seq.to_list in
   let max_path_length = 2*(List.length g) in
   List.map ~f:(fun (i, _src_mem, _src, _dst) ->
-    paths g max_path_length i
-    |> List.map ~f:callstring_of_callsite_list
-    |> get_subpaths_list
-  ) g
+      paths g max_path_length i
+      |> List.map ~f:callstring_of_callsite_list
+      |> get_subpaths_list
+    ) g
   |> flatten_list
   |> dedupe_list
   |> make_map g
