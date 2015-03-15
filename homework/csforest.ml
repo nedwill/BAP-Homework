@@ -4,8 +4,7 @@ open Program_visitor
 open Callstrings
 
 let main p =
-  let cs = callstrings p "main" in
-  let _ = Seq.iter cs ~f:print_endline in
+  output_callstring_graph p "main" "graph.dot";
   p
 
 let () = register main
