@@ -19,3 +19,128 @@ bapbuild -pkg ocamlgraph callgraph.plugin
 
 assignment
 
+relevant messages from slack
+
+ivg [2:30 PM] 
+they have different interface, different invariants and underlying assumptions, and different implementation. Although both are about assosiativity between mem and data
+
+maurer [3:02 PM] 
+ivg: does insns_of_mem imply cfg recovery, followed by searching a table for known reachable instructions, or does it imply linear sweep?
+
+ivg [3:02 PM] 
+no linear sweep, only recursive descent.
+
+maurer [3:03 PM] 
+OK. The documentation doesn't really mention that these are subject to cfg recovery >_>
+
+maurer [3:03 PM]
+it just says that it returns instructions in those regions
+
+maurer [3:03 PM]
+(recursive descent is what I want, but I couldn't tell I was going to get it from the docs
+
+ivg [3:03 PM] 
+ok, got it, ty
+
+maurer [3:04 PM] 
+err, insns_at_mem was what I was talking about
+
+maurer [3:04 PM]
+but yeah, thanks
+
+ivg [3:05 PM] 
+the only way to obtain something from the `linear_sweep` is to call the `linear_sweep`, and actually it doesn't return a value of type `disasm`. Original idea, was that `disasm` is the disassembly of the program to best of our knowledge and skill so far, currently it is recursive descent.
+
+dluchaup [3:06 PM] 
+(adding here a question I had for David): the assignment says: "Given a program and an integer k, return a table m where m maps from a function to a k-sensitive call string." So does this map a function f to a single k-call string, or to all possible k-call strings of f? ($3.2 pg.5)
+
+dluchaup [3:06 PM]
+if we go back to Listing 1, there are the 3 call strings of length 2 for f: (c1,c4),(c2,c4),(c3,c4).
+
+dluchaup [3:02 PM]
+What should map[f] be?
+
+dluchaup [3:07 PM]
+Answer: map[f] could be  [  [c1;c4]; [c2;c4]; [c3;c4]] (i.e. a set or a list of contexts).
+
+dbrumley [3:08 PM] 
+Note that I'm leaving the set returned to be up to the API designer here; please make a good choice.  (it need not be a list.)
+
+Algorithms for the HW
+
+1.
+First generate address -> (src symbol, dest symbol) map.
+
+Then iter over them to get a call_num -> (address, src sym, dest sym) map. Call this call_site_info.
+
+start = domain of call_num map
+let sz = length start
+
+let new_callstrings_sets = map over call string set:
+	let last = last_element_of_callstring in
+	let dest = last->dest in
+	let next_possible = set of call_sites w/ src = dest in call_site_info
+	let local_new_callstrings = fold over next_possible w/ empty set:
+		add element from next_poss to end of call string
+		if new size > k, drop first element
+let new_callstrings = union of new_callstrings_sets
+
+if length new_callstrings = sz then
+	return new_callstrings (* same as input *)
+else
+	recurse
+
+2.
+We can obtain a callsite graph where callsites are vertices and directed edges go from a callsite to one that could potentially come after. Essentially, this is the call tree described in the handout before it is made into a tree - recursion is not turned to a leaf, it is just represented by the original edge.
+
+Idea: We can explore every unique walk/path in the callsite graph where unique means considering cycles by a node that represents exactly that node in the walk by visiting all paths of length 2*vertices.
+
+Consider this: We want to find all unique paths where each visited "thing" in the path is either:
+1) A single node
+2) A cycle
+
+The handout only considers self-loops. This is a stronger form that handles all cycles.
+
+If we consider each cycle by a single representative node (a stronger form of node*), then we notice that the length of a given path including a cycle must be at least visit every node, and it must traverse the entire cycle (so we know it exists). Then we continuing traversing the cycle, exiting at some node. In the worst case, we have to traverse the entire cycle again (in reality, length of cycle-1). So we have an upper bound on the possible number of paths before we just see the same cycles repeated: number of non-cycle nodes + sum over cycles (2*length of cycle - 1). So it is easiest to just use the upper bound of 2*(number of vertices) for path length before terminating the graph traversal.
+
+At this point, we can consider all paths of length up to 2*(num vertices). Then replace any cycles (search for repeated nodes) with a representative node, a list of the elements of the cycle. So we have the following Ocaml types:
+
+type call_site = int
+
+type call_string =
+	| Singleton of call_site
+	| Cycle of call_site list
+
+get all paths of up to length k starting from vertex v:
+let N = nbh(v)
+map x::(recursive dfs) over N
+
+this will give us all paths up to length 2*|v|
+
+now need
+callstring_of_list:
+map everything to singletons to start
+
+loop:
+maintain set of seen vertices, fold over the list
+no duplicate: done
+first duplicate:
+	find list of elements in cycle
+	go through list, replacing every cycle with the cycle node
+	go through list, keeping only first cycle node
+	recurse
+
+in this case our table will be a seq.
+dedupe list
+then take all sublists for smaller sized graphs
+the dedupe that and return as a seq
+
+Use bitmap w/ bignum and base-M number trick here if it's hashable. Gross but could work.
+
+4.
+We use the call string table that handles cycles correctly (question 2). From this we reconstruct the callsite graph. We traverse the graph beginning at the given root r. When we see a cycle, insert a leaf denoting a recursive call. Detect cycles by maintaining a set of parent vertices that's passed along in the search. Otherwise, when we see a normal leaf, give it the appropriate type (external or not).
+
+3.
+Use 2 to get a call string table, then feed it to 4.
+
+Note that in 3 and 4 we may have some inefficiencies as some functions may be unreachable from a given root. We could prune the graph before processing if these functions seem too slow.

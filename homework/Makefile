@@ -8,3 +8,6 @@ astrings:
 
 csforest:
 	bapbuild $(flags) csforest.plugin
+
+clean:
+	rm -r _build
