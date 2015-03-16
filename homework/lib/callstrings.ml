@@ -188,10 +188,15 @@ let neighborhood g v = (* could filter_map *)
 
 (* gives all walks up to length k in digraph G starting from vertex v *)
 let rec paths g k v =
-  let nbrhood = neighborhood g v in
-  List.map ~f:(fun nbr -> (paths g (k-1) nbr)) nbrhood
-  |> List.concat
-  |> List.map ~f:(fun path -> v::path)
+  if k = 0 then
+    []
+  else if k = 1 then
+    [[v]]
+  else
+    let nbrhood = neighborhood g v in
+    List.map ~f:(fun nbr -> (paths g (k-1) nbr)) nbrhood
+    |> List.concat
+    |> List.map ~f:(fun path -> v::path)
 
 (* return a list with duplicates removed *)
 (* polymorphic compare should just work here *)
