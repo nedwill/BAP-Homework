@@ -166,6 +166,7 @@ let output_callstring_graph p root outfile =
 
 (* Astrings *)
 let all_calls_mem p =
+  let () = printf "all_calls_mem called!\n%!" in
   let string_tab = Table.mapi p.symbols ~f:(
       fun mem src ->
         Seq.map (calls p.symbols (Disasm.insns_at_mem p.program mem)) ~f:(
@@ -180,6 +181,7 @@ let rec end_of_list = function
 
 (* given a graph g and a callsite v, what is the destination of that call? *)
 let get_target_dst g v =
+  let () = printf "get_target_dst called!\n%!" in
   match List.filter ~f:(fun (i, _src_mem, _src, _dst) -> i = v) g with
   | [] -> raise NoI
   | [(_i, _src_mem, _src, dst)] -> dst (* map as seq :/ *)
@@ -187,12 +189,14 @@ let get_target_dst g v =
 
 (* out-neighbors of v in g *)
 let neighborhood g v = (* could filter_map *)
+  let () = printf "neighborhood called!\n%!" in
   let target_dst = get_target_dst g v in
   List.filter ~f:(fun (_i, _src_mem, src, _dst) -> src = target_dst) g
   |> List.map ~f:(fun (i, _src_mem, _src, _dst) -> i)
 
 (* gives all walks up to length k in digraph G starting from vertex v *)
 let rec paths g k v =
+  let () = printf "paths called!\n%!" in
   if k = 0 then
     []
   else if k = 1 then
@@ -207,7 +211,9 @@ let rec paths g k v =
 (* polymorphic compare should just work here *)
 let rec dedupe_list = function
   | [] -> []
-  | x::l -> x::(dedupe_list (List.filter ~f:(fun x' -> x <> x') l))
+  | x::l ->
+    let () = printf "dedupe_list (recursive case) called!\n%!" in
+    x::(dedupe_list (List.filter ~f:(fun x' -> x <> x') l))
 
 let get_first_element = function
   | Singleton site -> site
@@ -215,6 +221,7 @@ let get_first_element = function
   | Cycle ([]) -> raise EmptyCycle
 
 let first_dupe_callstring l =
+  let () = printf "first_dupe_callstring called!\n%!" in
   let combine (first_dupe, current_set) element =
     let first_element = get_first_element element in
     begin match first_dupe with
@@ -236,6 +243,7 @@ let first_dupe_callstring l =
    Note: We should have a unit test for this.
 *)
 let cycle_list callstring_list v_dupe =
+  let () = printf "cycle_list called!\n%!" in
   let rec clear_start = function
     | x::l when get_first_element x = v_dupe -> l
     | _::l -> clear_start l
@@ -256,6 +264,7 @@ let cycle_list callstring_list v_dupe =
   collect_cycle dupe_start |> List.rev
 
 let rec prefix_matches l cycle_l =
+  let () = printf "prefix_matches called!\n%!" in
   match (l, cycle_l) with
   | ((Singleton x)::l, x'::l') ->
     if x = x' then prefix_matches l l' else false
@@ -265,6 +274,7 @@ let rec prefix_matches l cycle_l =
   | ([], []) -> true
 
 let rec drop_cycle_prefix l cycle_l =
+  let () = printf "drop_cycle_prefix called!\n%!" in
   match (l, cycle_l) with
   | ((Singleton x')::l', x''::l'') ->
     if x' <> x'' then
@@ -276,7 +286,9 @@ let rec drop_cycle_prefix l cycle_l =
 
 (* replace runs of singletons in l with Cycle (cycle_l) *)
 let replace_cycles l cycle_l =
+  let () = printf "replace_cycles called!\n%!" in
   let rec replace_cycles' l =
+    let () = printf "replace_cycles' called!\n%!" in
     match l with
     | [] -> []
     | x::l' ->
@@ -291,7 +303,9 @@ let replace_cycles l cycle_l =
 
 (* takes a walk of callsites (ints) from a graph and makes a callstring list *)
 let callstring_of_callsite_list l =
+  let () = printf "callstring_of_callsite_list called!\n%!" in
   let rec callstring_of_callsite_list' l' =
+    let () = printf "callstring_of_callsite_list' called!\n%!" in
     begin match first_dupe_callstring l' with
       | None -> l' (* no duplicates => no cycles remaining *)
       | Some v_dupe ->
@@ -306,6 +320,7 @@ let callstring_of_callsite_list l =
   |> dedupe_list
 
 let find_srcmem_dst g bts =
+  let () = printf "find_srcmem_dst called!\n%!" in
   List.find_exn g ~f:(fun (_i, _src_mem, src, _dst) -> src = bts)
   |> (fun (_i, src_mem, _src, _dst) -> src_mem)
 
@@ -317,6 +332,7 @@ let find_srcmem_dst g bts =
 let rec compress g = function
   | [] -> []
   | (i, lst)::l ->
+    let () = printf "compress called (non base case)\n%!" in
     let (matching, not_matching) = List.partition_tf ~f:(fun (i', _) -> i = i') l in
     let all_i_lists = List.fold ~f:(fun l' (_i, lst') -> lst'::l') ~init:[lst] matching in
     (find_srcmem_dst g i, all_i_lists)::(compress g not_matching)
@@ -327,6 +343,7 @@ let table_of_list = List.fold ~init:Table.empty ~f:(fun tb (x,y) -> Table.add tb
    of the last callsite.
  *)
 let get_astring_dest astr g =
+  let () = printf "get_astring_dest called!\n%!" in
   end_of_list astr (* get last element of astring *)
   |> get_first_element (* get first element (if cycle, then first element) *)
   |> get_target_dst g (* get the target of the call *)
@@ -335,13 +352,17 @@ let get_astring_dest astr g =
    all acyclic call strings for that function.
  *)
 let make_map g astr_list =
+  let () = printf "make_map called!\n%!" in
   List.map ~f:(fun astr -> (get_astring_dest astr g, astr)) astr_list
   |> compress g
   |> table_of_list
 
 (* Given a path l, find all subpaths. *)
+(* This doesn't work quite right; it only does prefixes ATM. *)
 let get_subpaths_one_path l =
+  let () = printf "get_subpaths_one_path called!\n%!" in
   let rec subpaths l a =
+    let () = printf "subpaths called!\n%!" in
     begin match l with
       | [] -> a (* don't include empty path *)
       | _::l' -> subpaths l' (l::a)
@@ -350,9 +371,11 @@ let get_subpaths_one_path l =
   subpaths l [] |> List.concat
 
 let get_subpaths_list l =
+  let () = printf "get_subpaths_list called!\n%!" in
   List.map l ~f:get_subpaths_one_path |> dedupe_list
 
 let get_astrings ~max_path_length g (i, _src_mem, _src, _dst) =
+  let () = printf "paths called!\n%!" in
   paths g max_path_length i
   |> List.map ~f:callstring_of_callsite_list
   |> get_subpaths_list
