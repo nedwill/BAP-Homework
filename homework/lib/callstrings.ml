@@ -255,7 +255,7 @@ let rec prefix_matches l cycle_l =
   | ((Singleton x)::l, x'::l') ->
     if x = x' then prefix_matches l l' else false
   | ((Cycle _::_), _::_) -> false
-  | ([], _::_) -> false
+  | ([], _::_) -> true
   | (_::_, []) -> false
   | ([], []) -> true
 
@@ -266,8 +266,8 @@ let rec drop_cycle_prefix l cycle_l =
       raise NotMatching
     else
       drop_cycle_prefix l' l''
-  | (_, []) -> l
-  | _ -> raise NotMatching
+  | (_, []) | ([], _::_) -> l
+  | (Cycle _::_, _::_) -> raise NotMatching
 
 (* replace runs of singletons in l with Cycle (cycle_l) *)
 let replace_cycles l cycle_l =
