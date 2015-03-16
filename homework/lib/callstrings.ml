@@ -187,7 +187,7 @@ let neighborhood g v = (* could filter_map *)
   |> List.map ~f:(fun (i, _src_mem, _src, _dst) -> i)
 
 (* gives all walks up to length k in digraph G starting from vertex v *)
-let rec paths g =
+let rec paths g k v =
   let nbrhood = neighborhood g v in
   List.map ~f:(fun nbr -> (paths g (k-1) nbr)) nbrhood
   |> List.concat
@@ -325,7 +325,7 @@ let get_astring_dest astr g =
    all acyclic call strings for that function.
  *)
 let make_map g astr_list =
-  List.map ~f:(fun astr -> (get_astring_dest astr g, x)) astr_list
+  List.map ~f:(fun astr -> (get_astring_dest astr g, astr)) astr_list
   |> compress g
   |> table_of_list
 
@@ -342,7 +342,7 @@ let get_subpaths_one_path l =
 let get_subpaths_list l =
   List.map l ~f:get_subpaths_one_path |> dedupe_list
 
-let get_astrings ~max_path_length (i, _src_mem, _src, _dst) =
+let get_astrings ~max_path_length g (i, _src_mem, _src, _dst) =
   paths g max_path_length i
   |> List.map ~f:callstring_of_callsite_list
   |> get_subpaths_list
@@ -353,7 +353,7 @@ let get_astrings ~max_path_length (i, _src_mem, _src, _dst) =
 let astrings p =
   let g = p |> all_calls_mem |> Seq.to_list in
   let max_path_length = 2*(List.length g) in
-  List.map ~f:(get_astrings ~max_path_length) g
+  List.map ~f:(get_astrings ~max_path_length g) g
   |> List.concat
   |> dedupe_list
   |> make_map g
