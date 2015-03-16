@@ -20,7 +20,8 @@ let print_astring_table : astring list table -> unit =
   )
 
 let main p =
-  let () = (astrings p) |> print_astring_table in
+  let ast_table = astrings p in
+  let () = print_astring_table ast_table in
   p
 
 let () = register main
