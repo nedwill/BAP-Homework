@@ -5,7 +5,12 @@ open Program_visitor
 (* Tree Types *)
 type func = string
 type call = int * func * func
-type node = Terminal of call | Recursive of call | External of call | Node of call * node seq | Root of func * node seq
+type node =
+  | Terminal of call
+  | Recursive of call
+  | External of call
+  | Node of call * node seq
+  | Root of func * node seq
 
 (* Astring Types *)
 type call_site = int
