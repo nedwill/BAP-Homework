@@ -25,17 +25,19 @@ exception NotMatching
 let calls syms insns =
   Seq.concat_map insns ~f:(
     fun (_mem, insn) ->
-      let visitor = (object inherit [string seq] Bil.visitor
-        method! enter_int addr calls =
-          if in_jmp then
-            match Table.find_addr syms addr with
-            | None -> calls
-            | Some (mem, dst) ->
-              if Addr.(Memory.min_addr mem = addr) then
-                Seq.cons dst calls
-              else calls
-          else calls
-      end) in visitor#run (Insn.bil insn) Seq.empty)
+      let visitor =
+        object inherit [string seq] Bil.visitor
+          method! enter_int addr calls =
+            if in_jmp then
+              match Table.find_addr syms addr with
+              | None -> calls
+              | Some (mem, dst) ->
+                if Addr.(Memory.min_addr mem = addr) then
+                  Seq.cons dst calls
+                else calls
+            else calls
+        end
+      in visitor#run (Insn.bil insn) Seq.empty)
 
 (* Call Tree *)
 let all_calls p =
@@ -87,9 +89,12 @@ module CallstringGraph = struct
   (* Recursive iterator over the ADT. Builds up the callstring in the calls *)
   let rec iter_v f calls t =
     let cn = get_callnum t in
-    let calls = (match cn with
+    let calls =
+      begin match cn with
         | Some i -> i :: calls
-        | None -> calls) in
+        | None -> calls
+      end
+    in
     (f (t, calls); match t with
       | Root (_, children) -> f (t, []); Seq.iter children ~f:(iter_v f [])
       | Node (_, children) -> Seq.iter children ~f:(iter_v f (calls))
@@ -100,16 +105,22 @@ module CallstringGraph = struct
   (* Recursive iterator over the ADT *)
   let rec iter_e f calls t =
     let cn = get_callnum t in
-    let calls = (match cn with
+    let calls =
+      begin match cn with
         | Some i -> i :: calls
-        | None -> calls) in
+        | None -> calls
+      end
+    in
     match t with
     | Node (_, children) | Root (_, children)-> Seq.iter children ~f:(
         fun next ->
           let nextnum = get_callnum next in
-          let nextcalls = (match nextnum with
+          let nextcalls =
+            begin match nextnum with
               | Some i -> i :: calls
-              | None -> calls) in
+              | None -> calls
+            end
+          in
           f ((t, calls), (next, nextcalls)); iter_e f (calls) next; ())
     | _ -> ()
 
